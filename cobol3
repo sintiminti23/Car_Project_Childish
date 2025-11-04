@@ -1,0 +1,140 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID.  JC45A04.
+
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT INPARM  ASSIGN TO 'INPARM'
+               ORGANIZATION IS SEQUENTIAL.
+           SELECT INFILE  ASSIGN TO 'JC4SA01'
+               ORGANIZATION IS SEQUENTIAL.
+           SELECT OUTFILE ASSIGN TO 'JC4SA02'
+               ORGANIZATION IS SEQUENTIAL.
+
+       DATA DIVISION.
+       FILE SECTION.
+       FD  INPARM
+           RECORD CONTAINS 80 CHARACTERS
+           RECORDING MODE IS F.
+       01  INPARM-REC.
+           05  PRM-PCS-DT        PIC X(08).  *> Processing date YYYYMMDD
+           05  FILLER             PIC X(72).
+
+       FD  INFILE
+           RECORD CONTAINS 200 CHARACTERS
+           RECORDING MODE IS F.
+       01  IN-REC.
+           05  IN-SALE-NO        PIC X(10).
+           05  IN-PLC-CTM-NO     PIC X(10).
+           05  IN-KND-CD         PIC X(05).
+           05  IN-ITD-CIR-NO     PIC X(10).
+           05  IN-SALE-DT        PIC X(08).
+           05  IN-REG-DT         PIC X(08).
+           05  IN-MNG-AGT-NO     PIC X(10).
+           05  IN-VHC-TYPE-CD    PIC X(05).
+           05  IN-TPL-IC         PIC X(05).
+           05  IN-ARK-IC         PIC X(05).
+           05  IN-PMM-AM         PIC 9(13)V99.
+           05  FILLER            PIC X(86).
+
+       FD  OUTFILE
+           RECORD CONTAINS 80 CHARACTERS
+           RECORDING MODE IS F.
+       01  OUT-REC.
+           05  OUT-SALE-NO       PIC X(10).
+           05  OUT-ERR-CD        PIC S9(9) COMP-3.
+           05  FILLER            PIC X(67).
+
+       WORKING-STORAGE SECTION.
+       01  SQLCODE              PIC S9(9) COMP.
+
+       *------------------------------------------------------------*
+       * End-of-file switch using HIGH and LOW values               *
+       *------------------------------------------------------------*
+       01  WS-END-SW            PIC X VALUE LOW-VALUE.
+           88  END-OF-FILE      VALUE HIGH-VALUE.
+           88  NOT-END-OF-FILE  VALUE LOW-VALUE.
+
+       01  WS-PRM-PCS-DT        PIC X(08).
+
+       EXEC SQL
+           INCLUDE CBVMFA01
+       END-EXEC.
+
+       PROCEDURE DIVISION.
+       MAIN-LOGIC SECTION.
+       0000-MAIN.
+           PERFORM 1000-INITIALIZE.
+           PERFORM 2000-PROCESS UNTIL END-OF-FILE.
+           PERFORM 3000-FINALIZE.
+           STOP RUN.
+
+       1000-INITIALIZE.
+           OPEN INPUT INPARM INFILE
+                OUTPUT OUTFILE.
+
+           READ INPARM
+               AT END DISPLAY 'ERROR: INPARM MISSING'
+                     STOP RUN
+           END-READ.
+           MOVE PRM-PCS-DT TO WS-PRM-PCS-DT.
+           DISPLAY 'PROCESSING DATE = ' WS-PRM-PCS-DT.
+
+           READ INFILE
+               AT END SET END-OF-FILE TO TRUE
+           END-READ.
+           EXIT.
+
+       2000-PROCESS.
+           IF NOT-END-OF-FILE
+              PERFORM 2100-INSERT-DB2
+              READ INFILE
+                  AT END SET END-OF-FILE TO TRUE
+              END-READ
+           END-IF.
+           EXIT.
+
+       2100-INSERT-DB2.
+           EXEC SQL
+               INSERT INTO CBVMFA01
+               (SALE_NO,
+                PLC_CTM_NO,
+                KND_CD,
+                ITD_CIR_NO,
+                SALE_DT,
+                REG_DT,
+                MNG_AGT_NO,
+                VHC_TYPE_CD,
+                TPL_IC,
+                ARK_IC,
+                PMM_AM)
+               VALUES
+               (:IN-SALE-NO,
+                :IN-PLC-CTM-NO,
+                :IN-KND-CD,
+                :IN-ITD-CIR-NO,
+                :IN-SALE-DT,
+                :WS-PRM-PCS-DT,
+                :IN-MNG-AGT-NO,
+                :IN-VHC-TYPE-CD,
+                :IN-TPL-IC,
+                :IN-ARK-IC,
+                :IN-PMM-AM)
+           END-EXEC.
+
+           IF SQLCODE NOT = 0
+              MOVE IN-SALE-NO TO OUT-SALE-NO
+              MOVE SQLCODE    TO OUT-ERR-CD
+              WRITE OUT-REC
+              DISPLAY 'INSERT ERROR: SALE_NO=' IN-SALE-NO
+                      ' SQLCODE=' SQLCODE
+           END-IF.
+           EXIT.
+
+       3000-FINALIZE.
+           CLOSE INPARM INFILE OUTFILE.
+           EXEC SQL
+               COMMIT
+           END-EXEC.
+           DISPLAY 'PROGRAM COMPLETED SUCCESSFULLY'.
+           EXIT.
