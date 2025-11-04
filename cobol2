@@ -1,0 +1,115 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID.  JC45A03.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT OUTFILE ASSIGN TO 'JC4SA02'
+               ORGANIZATION IS SEQUENTIAL.
+
+       DATA DIVISION.
+       FILE SECTION.
+       FD  OUTFILE
+           RECORD CONTAINS 200 CHARACTERS
+           RECORDING MODE IS F
+           BLOCK CONTAINS 0 RECORDS.
+       01  OUT-REC.
+           05  OUT-SALE-NO        PIC X(10).
+           05  OUT-PLC-CTM-NO     PIC X(10).
+           05  OUT-KND-CD         PIC X(05).
+           05  OUT-MNG-AGT-NO     PIC X(10).
+           05  OUT-PMM-AM         PIC 9(13)V99.
+           05  OUT-CTR-NM         PIC X(30).
+           05  FILLER             PIC X(122).   *> pad to 200 or 80 bytes as per BDZTAxx
+
+       WORKING-STORAGE SECTION.
+       01  SQLCODE              PIC S9(9) COMP.
+       01  WS-END-SW            PIC X VALUE 'N'.
+           88  END-OF-DATA      VALUE 'Y'.
+           88  NOT-END-OF-DATA  VALUE 'N'.
+
+       EXEC SQL
+           INCLUDE CBVMFA01
+       END-EXEC.
+       EXEC SQL
+           INCLUDE CBVMFA02
+       END-EXEC.
+
+       * Host variables to receive data from the join
+       01  HV-SALE-NO           PIC X(10).
+       01  HV-PLC-CTM-NO        PIC X(10).
+       01  HV-KND-CD            PIC X(05).
+       01  HV-MNG-AGT-NO        PIC X(10).
+       01  HV-PMM-AM            PIC 9(13)V99.
+       01  HV-CTR-NM            PIC X(30).
+
+       EXEC SQL
+           DECLARE C1 CURSOR FOR
+           SELECT A.SALE_NO,
+                  A.PLC_CTM_NO,
+                  A.KND_CD,
+                  A.MNG_AGT_NO,
+                  A.PMM_AM,
+                  B.CTR_NM
+             FROM CBVMFA01 A
+             JOIN CBVMFA02 B
+               ON A.ITD_CTR_NO = B.CTR_NO
+           END-EXEC.
+
+       PROCEDURE DIVISION.
+       MAIN-LOGIC SECTION.
+       0000-MAIN.
+           PERFORM 1000-INITIALIZE.
+           PERFORM 2000-PROCESS-DATA UNTIL END-OF-DATA.
+           PERFORM 3000-FINALIZE.
+           STOP RUN.
+
+       1000-INITIALIZE.
+           OPEN OUTPUT OUTFILE.
+           EXEC SQL
+               OPEN C1
+           END-EXEC.
+           IF SQLCODE NOT = 0
+              DISPLAY 'ERROR OPENING CURSOR, SQLCODE=' SQLCODE
+              SET END-OF-DATA TO TRUE
+           END-IF.
+           EXIT.
+
+       2000-PROCESS-DATA.
+           EXEC SQL
+               FETCH C1
+               INTO :HV-SALE-NO,
+                    :HV-PLC-CTM-NO,
+                    :HV-KND-CD,
+                    :HV-MNG-AGT-NO,
+                    :HV-PMM-AM,
+                    :HV-CTR-NM
+           END-EXEC.
+
+           IF SQLCODE = 0
+              MOVE HV-SALE-NO    TO OUT-SALE-NO
+              MOVE HV-PLC-CTM-NO TO OUT-PLC-CTM-NO
+              MOVE HV-KND-CD     TO OUT-KND-CD
+              MOVE HV-MNG-AGT-NO TO OUT-MNG-AGT-NO
+              MOVE HV-PMM-AM     TO OUT-PMM-AM
+              MOVE HV-CTR-NM     TO OUT-CTR-NM
+              WRITE OUT-REC
+           ELSE
+              IF SQLCODE = 100
+                 SET END-OF-DATA TO TRUE
+              ELSE
+                 DISPLAY 'DB2 FETCH ERROR, SQLCODE=' SQLCODE
+                 SET END-OF-DATA TO TRUE
+              END-IF
+           END-IF.
+           EXIT.
+
+       3000-FINALIZE.
+           EXEC SQL
+               CLOSE C1
+           END-EXEC.
+           CLOSE OUTFILE.
+           EXEC SQL
+               COMMIT
+           END-EXEC.
+           DISPLAY 'PROGRAM COMPLETED SUCCESSFULLY'.
+           EXIT.
